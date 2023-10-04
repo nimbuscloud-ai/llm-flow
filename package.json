@@ -1,6 +1,6 @@
 {
   "name": "@nimbuscloud-ai/llm-flow",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "main": "build/src/index.js",
   "type": "module",
   "engines": {
