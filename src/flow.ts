@@ -48,16 +48,10 @@ const toXState = (workflow: Workflow<any, any>) => {
       onDone: {
         actions: [
           assign({
-            result: (_, event) => {
-              console.debug('Assigning result', { event });
-              return event['data'];
-            },
+            result: (_, event) => event['data'],
           }),
           assign({
-            input: context => {
-              console.debug('Assigning input', { context });
-              return [context['result']];
-            },
+            input: context => [context['result']],
           }),
         ],
       },
@@ -114,7 +108,7 @@ const toXState = (workflow: Workflow<any, any>) => {
               }),
             ],
             cond: (context, event) => {
-              console.debug('Checking control flow value', { context, event });
+              console.debug(`Checking ${nodeId} -> ${nextNodeId} value`, { context, event });
               return `${event.data}` === `${branch}`;
             },
           };
@@ -136,10 +130,7 @@ const toXState = (workflow: Workflow<any, any>) => {
                   }),
                 ],
                 cond: (context, event) => {
-                  console.debug('Checking control flow value', {
-                    context,
-                    event,
-                  });
+                  console.debug(`Checking ${nodeId} -> ${defaultBranch} value`, { context, event });
                   return true;
                 },
               },
