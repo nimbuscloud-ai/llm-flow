@@ -1,9 +1,42 @@
 import { State, StateMachine, createMachine, interpret } from 'xstate';
 import { StateListener } from 'xstate/lib/interpreter';
 
-type ExecutionOptions = {
-  timeout?: number;
+type LogMethod = (...args: any[]) => void;
+export interface Logger { 
+  log: LogMethod;
+  warn: LogMethod;
+  error: LogMethod;
+  debug: LogMethod;
+}
+
+const LOG_LEVELS = ['debug', 'log', 'warn', 'error'] as const;
+export type LogLevel = typeof LOG_LEVELS[number];
+
+const noOp = () => {};
+
+export const DEFAULT_LOGGER = (logLevel: LogLevel) => {
+  const logAtLevel = (methodLevel: LogLevel, logMethod: LogMethod) => LOG_LEVELS.indexOf(logLevel) <= LOG_LEVELS.indexOf(methodLevel) ? (...args) => logMethod(`[${methodLevel.toUpperCase()}]`, ...args): noOp;
+
+  return {
+    debug: logAtLevel('debug', console.debug),
+    log: logAtLevel('log', console.log),
+    warn: logAtLevel('warn', console.warn),
+    error: logAtLevel('error', console.error),
+  }
 };
+
+export type ExecutionOptions = {
+  timeout?: number;
+  logger?: Logger;
+};
+
+export class FlowError extends Error {
+  constructor(message: string, public stack: string, public task: string) {
+    super(message);
+  }
+}
+
+export const isFlowError = (error: any): error is FlowError => error instanceof FlowError;
 
 class Executor {
   stateMachine: StateMachine<any, any, any>;
@@ -25,10 +58,10 @@ class Executor {
     const restoredState = stateMachine.resolveState(currentState);
 
     return {
-      execute: (input, { timeout = 1000 * 10 }: ExecutionOptions) => {
+      execute: (input, { timeout = 1000 * 10, logger = DEFAULT_LOGGER((process.env.LOG_LEVEL ?? 'debug') as LogLevel) }: ExecutionOptions) => {
         const service = interpret(stateMachine).start(restoredState);
         const { value, context } = service.initialState;
-        console.debug(
+        logger.debug(
           'Initial state',
           JSON.stringify({ value, context }, null, 2)
         );
@@ -39,15 +72,19 @@ class Executor {
               state,
               event
             ) => {
-              console.debug('Entered state:', {
+              logger.debug('Entered state:', {
                 value: state.value,
                 context: state.context,
                 history: state.historyValue,
               });
-              console.debug('Event:', event);
+              logger.debug('Event:', event);
 
               if (state.context.error) {
-                reject(state.context.error);
+                reject(new FlowError(
+                  state.context.error.message,
+                  state.context.error.stack,
+                  state.value as string,
+                ));
                 return;
               }
 

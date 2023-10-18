@@ -1,5 +1,5 @@
 import { assign } from 'xstate';
-import stateMachine from './state-machine';
+import stateMachine, { DEFAULT_LOGGER, LogLevel, Logger } from './state-machine';
 import { randomUUID } from 'crypto';
 
 interface Node<Input extends unknown[], Output> {
@@ -8,7 +8,7 @@ interface Node<Input extends unknown[], Output> {
   execute: (state: any, ...input: Input) => Promise<Output>;
 }
 
-const toXState = (workflow: Workflow<any, any>) => {
+const toXState = (workflow: Workflow<any, any>, { logger }: { logger: Logger }) => {
   const xstateConfig: any = {
     id: 'workflow',
     initial: workflow.nodes[workflow.startNodeId].id,
@@ -20,14 +20,14 @@ const toXState = (workflow: Workflow<any, any>) => {
     containingWorkflow: Workflow<any, any>,
     visited: Set<string> = new Set()
   ): void => {
-    console.debug('Processing node', {
+    logger.debug('Processing node', {
       nodeId,
       node: containingWorkflow.nodes[nodeId],
       workflow: containingWorkflow,
       visited,
     });
     if (visited.has(nodeId)) {
-      console.debug('Already visited node', { nodeId });
+      logger.debug('Already visited node', { nodeId });
       return;
     }
 
@@ -40,7 +40,7 @@ const toXState = (workflow: Workflow<any, any>) => {
       return;
     }
 
-    console.debug('Adding node', { nodeId });
+    logger.debug('Adding node', { nodeId });
     xstateConfig.states[nodeId] = {};
 
     xstateConfig.states[nodeId].invoke = {
@@ -56,11 +56,12 @@ const toXState = (workflow: Workflow<any, any>) => {
         ],
       },
       onError: {
-        action: assign({
+        invoke: logger.error,
+        actions: [assign({
           error: (_, event) => {
             return event['data'];
           },
-        }),
+        })],
       },
     };
 
@@ -82,7 +83,7 @@ const toXState = (workflow: Workflow<any, any>) => {
 
     if (!outgoingEdge) {
       if (nodeId !== workflow.endNodeId) {
-        console.warn(`Node ${nodeId} has no outgoing edges and is not the end`);
+        logger.warn(`Node ${nodeId} has no outgoing edges and is not the end`);
       }
 
       xstateConfig.states[nodeId].invoke.onDone.target = '_complete';
@@ -108,7 +109,7 @@ const toXState = (workflow: Workflow<any, any>) => {
               }),
             ],
             cond: (context, event) => {
-              console.debug(`Checking ${nodeId} -> ${nextNodeId} value`, { context, event });
+              logger.debug(`Checking ${nodeId} -> ${nextNodeId} value`, { context, event });
               return `${event.data}` === `${branch}`;
             },
           };
@@ -130,7 +131,7 @@ const toXState = (workflow: Workflow<any, any>) => {
                   }),
                 ],
                 cond: (context, event) => {
-                  console.debug(`Checking ${nodeId} -> ${defaultBranch} value`, { context, event });
+                  logger.debug(`Checking ${nodeId} -> ${defaultBranch} value`, { context, event });
                   return true;
                 },
               },
@@ -142,10 +143,10 @@ const toXState = (workflow: Workflow<any, any>) => {
         outgoingEdge.possibilities.__;
     }
 
-    console.debug('Next', Object.values(outgoingEdge.possibilities));
+    logger.debug('Next', Object.values(outgoingEdge.possibilities));
 
     for (const nextNodeId of Object.values(outgoingEdge.possibilities)) {
-      console.debug('Processing next node', { nextNodeId });
+      logger.debug('Processing next node', { nextNodeId });
       processNode(nextNodeId, containingWorkflow, visited);
     }
   };
@@ -295,10 +296,17 @@ export class Workflow<I extends unknown[], O> implements Node<I, O> {
     state: any,
     input: I,
     options: {
-      timeout: number;
-    } = { timeout: 10 * 1000 }
+      timeout?: number;
+      logger?: Logger;
+    } = {}
   ): Promise<O> {
-    const def = toXState(this);
+    const optionsWithDefaults = {
+      timeout: 1000 * 10,
+      logger: DEFAULT_LOGGER((process.env.LOG_LEVEL ?? 'debug') as LogLevel),
+      ...options,
+    };
+    
+    const def = toXState(this, { logger: optionsWithDefaults.logger });
     const { id, initial, states, context } = def;
     const executor = await stateMachine.synchronize({
       stateRepresentation: {
@@ -311,7 +319,7 @@ export class Workflow<I extends unknown[], O> implements Node<I, O> {
       savedContext: state,
       savedState: {},
     });
-    const result = await executor.execute(input, options);
+    const result = await executor.execute(input, optionsWithDefaults);
 
     return result as O;
   }
