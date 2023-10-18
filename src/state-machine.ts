@@ -3,13 +3,13 @@ import { StateListener } from 'xstate/lib/interpreter';
 
 type LogMethod = (...args: any[]) => void;
 export interface Logger { 
-  log: LogMethod;
+  info: LogMethod;
   warn: LogMethod;
   error: LogMethod;
   debug: LogMethod;
 }
 
-const LOG_LEVELS = ['debug', 'log', 'warn', 'error'] as const;
+const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 export type LogLevel = typeof LOG_LEVELS[number];
 
 const noOp = () => {};
@@ -19,7 +19,7 @@ export const DEFAULT_LOGGER = (logLevel: LogLevel) => {
 
   return {
     debug: logAtLevel('debug', console.debug),
-    log: logAtLevel('log', console.log),
+    info: logAtLevel('info', console.log),
     warn: logAtLevel('warn', console.warn),
     error: logAtLevel('error', console.error),
   }
